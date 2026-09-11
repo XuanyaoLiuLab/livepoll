@@ -6,9 +6,8 @@
 <title>Live Poll</title>
 
 <!-- ==================================================================== -->
-<!--  STEP 1 OF SETUP: paste your Firebase config object below.           -->
-<!--  Firebase console > Project settings > Your apps > Web app > Config  -->
-<!--  These values are meant to be public; they are not secrets.          -->
+<!--  Your Firebase config. These values are public identifiers, not      -->
+<!--  secrets — access is controlled by firestore.rules.                  -->
 <!-- ==================================================================== -->
 <script>
 window.FIREBASE_CONFIG = {
@@ -49,7 +48,7 @@ window.FIREBASE_CONFIG = {
     width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;
     font:inherit;background:#fff;color:var(--ink)
   }
-  textarea{min-height:70px;resize:vertical}
+  textarea{min-height:64px;resize:vertical}
   input:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
   button{
     font:inherit;font-weight:500;cursor:pointer;border-radius:8px;
@@ -59,13 +58,26 @@ window.FIREBASE_CONFIG = {
   button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
   button.primary:hover{filter:brightness(1.07)}
   button.ghost{background:transparent}
-  button:disabled{opacity:.5;cursor:not-allowed}
+  button.small{padding:6px 10px;font-size:.85rem}
+  button:disabled{opacity:.45;cursor:not-allowed}
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .spread{justify-content:space-between}
   .opt-row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
   .opt-row .tag{width:26px;height:26px;flex:0 0 26px;border-radius:6px;display:grid;place-items:center;font-size:.8rem;font-weight:600;color:#fff}
   .opt-row button{padding:6px 10px;flex:0 0 auto}
   .muted{color:var(--muted);font-size:.88rem}
-  .divider{height:1px;background:var(--line);margin:20px 0}
+
+  /* question list */
+  .qitem{display:flex;gap:12px;align-items:flex-start;padding:12px;border:1px solid var(--line);
+    border-radius:10px;margin-bottom:8px;background:#fff}
+  .qitem.live{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);background:var(--accent-soft)}
+  .qitem .n{flex:0 0 24px;width:24px;height:24px;border-radius:6px;background:#f0ece7;color:var(--muted);
+    display:grid;place-items:center;font-size:.78rem;font-weight:700}
+  .qitem.live .n{background:var(--accent);color:#fff}
+  .qitem .body{flex:1 1 auto;min-width:0}
+  .qitem .t{font-weight:500;overflow-wrap:anywhere}
+  .qitem .m{font-size:.8rem;color:var(--muted);margin-top:2px}
+  .qitem .acts{flex:0 0 auto;display:flex;gap:6px;flex-wrap:wrap}
 
   /* results */
   .qtext{font-size:1.45rem;font-weight:600;letter-spacing:-.015em;margin:0 0 20px;line-height:1.25}
@@ -96,6 +108,7 @@ window.FIREBASE_CONFIG = {
   .choice[aria-pressed=true]{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}
   .status{padding:12px 14px;border-radius:10px;background:var(--accent-soft);color:#7d3a1f;font-size:.92rem;margin-bottom:16px}
   .status.ok{background:#e4efe8;color:var(--ok)}
+  .status.wait{background:#f0ece7;color:var(--muted)}
   .pill{display:inline-block;padding:3px 9px;border-radius:99px;font-size:.75rem;font-weight:600;letter-spacing:.03em;text-transform:uppercase}
   .pill.open{background:#e4efe8;color:var(--ok)}
   .pill.closed{background:#f0ece7;color:var(--muted)}
@@ -109,13 +122,11 @@ window.FIREBASE_CONFIG = {
   body.present .track{height:26px;border-radius:13px}
   body.present .fill{border-radius:13px}
   body.present .bar{margin-bottom:24px}
-  body.present .total{font-size:1.2rem}
+  body.present .total{font-size:1.2rem;margin-bottom:70px}
   body.present .panel{border:none;background:transparent;padding:0}
-  body.present .total{margin-bottom:70px}
   .exit-present{position:fixed;bottom:14px;right:14px;z-index:9;display:none;opacity:.4;font-size:.85rem}
   .exit-present:hover{opacity:1}
   body.present .exit-present{display:block}
-  /* small join reminder for latecomers, present mode only */
   #joinbadge{display:none;position:fixed;bottom:14px;left:14px;z-index:9;
     align-items:center;gap:10px;color:var(--muted);font-size:.85rem}
   #joinbadge canvas,#joinbadge img{width:64px;height:64px;display:block;border-radius:4px}
@@ -123,6 +134,8 @@ window.FIREBASE_CONFIG = {
   body.present #joinbadge{display:flex}
 
   code.inline{background:#f0ece7;padding:1px 5px;border-radius:4px;font-size:.85em}
+  kbd{background:#f0ece7;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;
+    padding:1px 6px;font:.8rem ui-monospace,Menlo,monospace}
   .setup li{margin-bottom:10px}
   @media (max-width:520px){ .wrap{padding:16px 14px 56px} .qtext{font-size:1.25rem} }
 </style>
@@ -136,48 +149,41 @@ window.FIREBASE_CONFIG = {
 <script type="module">
 const app  = document.getElementById("app");
 const SDK  = "https://www.gstatic.com/firebasejs/10.12.2/";
-
-function fatal(title, detail){
-  app.innerHTML = `<h1>${title}</h1><p class="sub">${detail}</p>`;
-}
 const BARS = ["var(--bar1)","var(--bar2)","var(--bar3)","var(--bar4)","var(--bar5)","var(--bar6)","var(--bar7)","var(--bar8)"];
 const LETTERS = "ABCDEFGHIJKLMNOP";
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
 window.setPresent = on => { document.body.classList.toggle("present", !!on); };
+function fatal(title, detail){ app.innerHTML = `<h1>${title}</h1><p class="sub">${detail}</p>`; }
 
-/* ---------- guard: config not filled in yet ---------- */
-if (!window.FIREBASE_CONFIG || String(window.FIREBASE_CONFIG.apiKey).includes("PASTE_ME")) {
+/* ---------- guard: config not filled in ---------- */
+if (!window.FIREBASE_CONFIG || String(window.FIREBASE_CONFIG.apiKey).includes("PASTE" + "_ME")) {
   app.innerHTML = `
     <h1>Live Poll — one more step</h1>
     <p class="sub">The app is installed, but it needs a (free) Firebase project to store votes.</p>
-    <div class="panel setup">
-      <ol>
-        <li>Go to <code class="inline">console.firebase.google.com</code> and create a project (no billing needed).</li>
-        <li>Build &rarr; <b>Firestore Database</b> &rarr; Create database &rarr; production mode.</li>
-        <li>Build &rarr; <b>Authentication</b> &rarr; Get started &rarr; enable <b>Anonymous</b>.</li>
-        <li>Project settings &rarr; <b>Your apps</b> &rarr; Web (<code class="inline">&lt;/&gt;</code>) &rarr; copy the <code class="inline">firebaseConfig</code> object.</li>
-        <li>Paste it into the <code class="inline">FIREBASE_CONFIG</code> block near the top of <code class="inline">index.html</code>, then push.</li>
-        <li>Paste the security rules from <code class="inline">firestore.rules</code> into Firestore &rarr; Rules &rarr; Publish.</li>
-      </ol>
-      <p class="muted">Those config values are safe to publish — access is controlled by the security rules, not by hiding them.</p>
-    </div>`;
+    <div class="panel setup"><ol>
+      <li>Create a project at <code class="inline">console.firebase.google.com</code>.</li>
+      <li>Build &rarr; <b>Firestore Database</b> &rarr; Create database (production mode).</li>
+      <li>Build &rarr; <b>Authentication</b> &rarr; enable <b>Anonymous</b>.</li>
+      <li>Project settings &rarr; Your apps &rarr; Web &rarr; copy <code class="inline">firebaseConfig</code> into the top of this file.</li>
+      <li>Paste <code class="inline">firestore.rules</code> into Firestore &rarr; Rules &rarr; Publish.</li>
+    </ol></div>`;
   throw new Error("config");
 }
 
-/* ---------- firebase (loaded dynamically so a network failure
-              shows a message instead of a blank page) ---------- */
+/* ---------- firebase, loaded dynamically so a network failure
+              shows a message instead of a blank page ---------- */
 let initializeApp, getAuth, signInAnonymously, onAuthStateChanged,
-    getFirestore, doc, getDoc, setDoc, updateDoc, getDocs,
-    collection, onSnapshot, writeBatch;
+    getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, getDocs,
+    collection, onSnapshot, writeBatch, query, orderBy;
 try {
   ({ initializeApp } = await import(SDK + "firebase-app.js"));
   ({ getAuth, signInAnonymously, onAuthStateChanged } = await import(SDK + "firebase-auth.js"));
-  ({ getFirestore, doc, getDoc, setDoc, updateDoc, getDocs,
-     collection, onSnapshot, writeBatch } = await import(SDK + "firebase-firestore.js"));
+  ({ getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, getDocs,
+     collection, onSnapshot, writeBatch, query, orderBy } = await import(SDK + "firebase-firestore.js"));
 } catch (e) {
   fatal("Can't reach Firebase",
-        "The page loaded but couldn't download the Firebase library. Check the network connection and reload.");
+        "The page loaded but couldn't download the Firebase library. Check the network and reload.");
   throw e;
 }
 
@@ -191,18 +197,30 @@ const ready = new Promise((resolve, reject) => {
   signInAnonymously(auth).catch(reject);
 });
 
-const pollRef  = code => doc(db, "polls", code);
-const votesRef = code => collection(db, "polls", code, "votes");
+/* ---------- data model -------------------------------------------------
+   polls/<ROOM>                     { owner, current, open, createdAt }
+   polls/<ROOM>/questions/<QID>     { question, options[], order }
+   polls/<ROOM>/questions/<QID>/votes/<uid>  { choice }
+
+   One ROOM per course or lecture — that's what the QR code points at.
+   Questions live inside it, and students stay on the same page all hour.
+---------------------------------------------------------------------- */
+const roomRef  = r          => doc(db, "polls", r);
+const qsRef    = r          => collection(db, "polls", r, "questions");
+const qRef     = (r, q)     => doc(db, "polls", r, "questions", q);
+const votesRef = (r, q)     => collection(db, "polls", r, "questions", q, "votes");
+const voteRef  = (r, q, u)  => doc(db, "polls", r, "questions", q, "votes", u);
 
 function newCode(){
   const A = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   return Array.from({length:4}, () => A[Math.floor(Math.random()*A.length)]).join("");
 }
-function baseUrl(){ return location.origin + location.pathname; }
-function joinUrl(code){ return baseUrl() + "#p/" + code; }
+const newQid = () => "q" + Date.now().toString(36) + Math.floor(Math.random()*1e4).toString(36);
+const baseUrl = () => location.origin + location.pathname;
+const joinUrl = r => baseUrl() + "#p/" + r;
 
-function tally(poll, voteDocs){
-  const n = (poll.options || []).length;
+function tally(qdata, voteDocs){
+  const n = (qdata && qdata.options || []).length;
   const counts = new Array(n).fill(0);
   let total = 0;
   for (const v of voteDocs) {
@@ -212,9 +230,9 @@ function tally(poll, voteDocs){
   return { counts, total };
 }
 
-function resultsHTML(poll, counts, total){
+function resultsHTML(qdata, counts, total){
   const max = Math.max(1, ...counts);
-  const bars = (poll.options || []).map((opt, i) => {
+  const bars = (qdata.options || []).map((opt, i) => {
     const pct = total ? Math.round(counts[i] / total * 100) : 0;
     return `<div class="bar">
       <div class="bar-top">
@@ -227,7 +245,7 @@ function resultsHTML(poll, counts, total){
       <div class="track"><div class="fill" style="width:${(counts[i]/max*100).toFixed(1)}%;background:${BARS[i % BARS.length]}"></div></div>
     </div>`;
   }).join("");
-  return `<div class="qtext">${esc(poll.question || "Untitled question")}</div>
+  return `<div class="qtext">${esc(qdata.question || "Untitled question")}</div>
           ${bars}
           <div class="total">${total} response${total === 1 ? "" : "s"}</div>`;
 }
@@ -235,192 +253,313 @@ function resultsHTML(poll, counts, total){
 /* ==================================================================== */
 /*  TEACHER CONSOLE                                                     */
 /* ==================================================================== */
-async function teacher(code){
+async function teacher(room){
   await ready;
 
   app.innerHTML = `
     <div class="hide-present">
-      <div class="row" style="justify-content:space-between;margin-bottom:4px">
-        <h1>Live Poll · ${code}</h1>
+      <div class="row spread" style="margin-bottom:4px">
+        <h1>Live Poll · ${room}</h1>
         <div class="row">
           <button class="ghost" id="present">Present</button>
-          <button class="ghost" id="brand-new">New poll</button>
+          <button class="ghost" id="newroom">New session</button>
         </div>
       </div>
-      <p class="sub">Keep this page. Students only ever see the join link.</p>
+      <p class="sub">One code for the whole lecture. Bookmark this page.</p>
 
       <div class="panel">
         <div class="join">
           <div id="qr"></div>
           <div>
-            <label>Students join at</label>
-            <div class="code">${code}</div>
-            <div class="url" id="url">${esc(joinUrl(code))}</div>
+            <label>Students join once, at</label>
+            <div class="code">${room}</div>
+            <div class="url">${esc(joinUrl(room))}</div>
             <div class="row" style="margin-top:10px">
-              <button class="ghost" id="copy">Copy link</button>
-              <button class="ghost" id="openstu">Open student view</button>
+              <button class="ghost small" id="copy">Copy link</button>
+              <button class="ghost small" id="openstu">Open student view</button>
             </div>
           </div>
         </div>
       </div>
 
       <div class="panel">
-        <h2>Question</h2>
-        <label for="q">Prompt</label>
-        <textarea id="q" placeholder="e.g. Which term dominates the variance of a polygenic trait?"></textarea>
-        <div style="height:14px"></div>
-        <label>Answer options</label>
-        <div id="opts"></div>
-        <div class="row" style="margin-top:10px">
-          <button class="ghost" id="addopt">+ Add option</button>
-          <button class="primary" id="save">Save question</button>
-          <span class="muted" id="savemsg"></span>
+        <div class="row spread" style="margin-bottom:12px">
+          <h2 style="margin:0">Questions</h2>
+          <button class="ghost small" id="addq">+ Add question</button>
         </div>
+        <div id="qlist"></div>
+        <div id="editor"></div>
       </div>
 
-      <div class="panel">
-        <div class="row" style="justify-content:space-between">
-          <div class="row">
-            <span id="statepill" class="pill closed">closed</span>
-            <span class="muted" id="livecount">0 responses</span>
-          </div>
-          <div class="row">
-            <button id="toggle">Open voting</button>
-            <button class="ghost" id="reset">Clear votes</button>
-          </div>
-        </div>
+      <div class="panel" id="live">
+        <p class="muted" style="margin:0">Nothing is showing to students yet.</p>
       </div>
     </div>
 
-    <div class="panel" id="results"><p class="muted">No votes yet.</p></div>`;
+    <div class="panel" id="results"></div>`;
 
-  document.getElementById("badgecode").textContent = code;
+  document.getElementById("badgecode").textContent = room;
   if (typeof QRCode === "function") {
-    new QRCode(document.getElementById("qr"), {
-      text: joinUrl(code), width: 148, height: 148,
-      colorDark: "#1a1a19", colorLight: "#ffffff",
-      correctLevel: QRCode.CorrectLevel.M
-    });
-    new QRCode(document.getElementById("qrmini"), {
-      text: joinUrl(code), width: 128, height: 128,
-      colorDark: "#1a1a19", colorLight: "#ffffff",
-      correctLevel: QRCode.CorrectLevel.M
-    });
+    const opts = { text: joinUrl(room), colorDark:"#1a1a19", colorLight:"#ffffff",
+                   correctLevel: QRCode.CorrectLevel.M };
+    new QRCode(document.getElementById("qr"),     { ...opts, width:148, height:148 });
+    new QRCode(document.getElementById("qrmini"), { ...opts, width:128, height:128 });
   } else {
     document.getElementById("qr").innerHTML =
       `<p class="muted" style="line-height:1.5;margin:0;max-width:140px">QR library didn't load — share the link instead.</p>`;
   }
 
-  document.getElementById("present").onclick  = () => setPresent(true);
-  document.getElementById("openstu").onclick  = () => window.open(joinUrl(code), "_blank");
-  document.getElementById("brand-new").onclick = () => { location.hash = "#t/" + newCode(); location.reload(); };
+  document.getElementById("present").onclick = () => setPresent(true);
+  document.getElementById("openstu").onclick = () => window.open(joinUrl(room), "_blank");
+  document.getElementById("newroom").onclick = () => {
+    if (confirm("Start a separate session with a new code? Your current one stays put — bookmark it first if you want it back."))
+      { location.hash = "#t/" + newCode(); location.reload(); }
+  };
   document.getElementById("copy").onclick = async e => {
-    try { await navigator.clipboard.writeText(joinUrl(code)); e.target.textContent = "Copied"; }
+    try { await navigator.clipboard.writeText(joinUrl(room)); e.target.textContent = "Copied"; }
     catch { e.target.textContent = "Copy failed"; }
     setTimeout(() => e.target.textContent = "Copy link", 1500);
   };
 
-  /* option editor */
-  const optsEl = document.getElementById("opts");
+  /* ---- make sure the room exists ---- */
+  const rs = await getDoc(roomRef(room));
+  if (!rs.exists()) {
+    await setDoc(roomRef(room), { owner: uid, current: null, open: false, createdAt: Date.now() });
+  }
+
+  /* ---- state ---- */
+  let roomData = { current:null, open:false };
+  let questions = [];          // [{id, ...data}]
+  let votes = [];
+  let editing = null;          // qid being edited, or "__new__"
+  let votesUnsub = null, boundQ = null;
+
+  /* ---- editor ---- */
+  function openEditor(qid){
+    editing = qid;
+    const q = questions.find(x => x.id === qid);
+    const opts = (q && q.options && q.options.length) ? q.options : ["", ""];
+    document.getElementById("editor").innerHTML = `
+      <div style="border:1px solid var(--line);border-radius:10px;padding:14px;margin-top:12px;background:var(--bg)">
+        <label for="q">Prompt</label>
+        <textarea id="q" placeholder="e.g. Which term dominates the variance here?">${esc(q ? q.question : "")}</textarea>
+        <div style="height:14px"></div>
+        <label>Answer options</label>
+        <div id="opts"></div>
+        <div class="row" style="margin-top:10px">
+          <button class="ghost small" id="addopt">+ Add option</button>
+          <button class="primary small" id="save">Save</button>
+          <button class="ghost small" id="cancel">Cancel</button>
+          <span class="muted" id="savemsg"></span>
+        </div>
+      </div>`;
+    drawOpts(opts);
+    document.getElementById("addopt").onclick = () => {
+      const v = readOpts(); if (v.length < 8) drawOpts([...v, ""]);
+    };
+    document.getElementById("cancel").onclick = () => closeEditor();
+    document.getElementById("save").onclick = saveQuestion;
+    document.getElementById("q").focus();
+  }
+  function closeEditor(){ editing = null; document.getElementById("editor").innerHTML = ""; }
+
   function drawOpts(values){
-    optsEl.innerHTML = values.map((v, i) => `
+    const el = document.getElementById("opts");
+    el.innerHTML = values.map((v, i) => `
       <div class="opt-row">
         <span class="tag" style="background:${BARS[i % BARS.length]}">${LETTERS[i]}</span>
-        <input type="text" value="${esc(v)}" data-i="${i}" placeholder="Option ${LETTERS[i]}">
+        <input type="text" value="${esc(v)}" placeholder="Option ${LETTERS[i]}">
         <button class="ghost" data-del="${i}" title="Remove">&times;</button>
       </div>`).join("");
-    optsEl.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
+    el.querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
       const vals = readOpts(); vals.splice(+b.dataset.del, 1);
       drawOpts(vals.length ? vals : [""]);
     });
   }
-  const readOpts = () => [...optsEl.querySelectorAll("input")].map(i => i.value);
-  document.getElementById("addopt").onclick = () => {
-    const v = readOpts();
-    if (v.length < 8) drawOpts([...v, ""]);
-  };
+  const readOpts = () =>
+    [...document.querySelectorAll("#opts input")].map(i => i.value);
 
-  /* ensure the poll doc exists */
-  const snapOnce = await getDoc(pollRef(code));
-  if (!snapOnce.exists()) {
-    await setDoc(pollRef(code), {
-      question: "", options: ["", ""], open: false,
-      owner: uid, createdAt: Date.now()
-    });
-  }
-
-  document.getElementById("save").onclick = async () => {
+  async function saveQuestion(){
     const options = readOpts().map(s => s.trim()).filter(Boolean);
-    if (options.length < 2) { msg("Need at least two options."); return; }
-    await updateDoc(pollRef(code), {
-      question: document.getElementById("q").value.trim(),
-      options
-    });
-    msg("Saved.");
-  };
+    const question = document.getElementById("q").value.trim();
+    if (!question)          return msg("Needs a prompt.");
+    if (options.length < 2) return msg("Needs at least two options.");
+    if (editing === "__new__") {
+      const id = newQid();
+      await setDoc(qRef(room, id), { question, options, order: Date.now() });
+    } else {
+      await updateDoc(qRef(room, editing), { question, options });
+    }
+    closeEditor();
+  }
   function msg(t){
     const m = document.getElementById("savemsg");
-    m.textContent = t; setTimeout(() => m.textContent = "", 2000);
+    if (m) { m.textContent = t; setTimeout(() => { if (m) m.textContent = ""; }, 2200); }
   }
 
-  document.getElementById("toggle").onclick = async e => {
-    await updateDoc(pollRef(code), { open: e.target.dataset.open !== "1" });
-  };
+  document.getElementById("addq").onclick = () => openEditor("__new__");
 
-  document.getElementById("reset").onclick = async () => {
-    const snap = await getDocs(votesRef(code));
+  /* ---- actions on a question ---- */
+  window.__show = async qid => {
+    await updateDoc(roomRef(room), { current: qid, open: true });
+  };
+  window.__edit = qid => openEditor(qid);
+  window.__del  = async qid => {
+    if (!confirm("Delete this question and its votes?")) return;
+    const vs = await getDocs(votesRef(room, qid));
     const batch = writeBatch(db);
-    snap.forEach(d => batch.delete(d.ref));
+    vs.forEach(d => batch.delete(d.ref));
     await batch.commit();
+    await deleteDoc(qRef(room, qid));
+    if (roomData.current === qid) await updateDoc(roomRef(room), { current: null, open: false });
   };
 
-  /* live state */
-  let poll = { question:"", options:[], open:false };
-  let votes = [];
-  let editorSeeded = false;
+  async function toggleOpen(){
+    if (!roomData.current) return;
+    await updateDoc(roomRef(room), { open: !roomData.open });
+  }
+  async function clearVotes(){
+    if (!roomData.current) return;
+    const vs = await getDocs(votesRef(room, roomData.current));
+    const batch = writeBatch(db);
+    vs.forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  }
+  async function step(delta){
+    const i = questions.findIndex(q => q.id === roomData.current);
+    const next = questions[(i < 0 ? 0 : i + delta)];
+    if (next) await updateDoc(roomRef(room), { current: next.id, open: true });
+  }
+  async function hideAll(){
+    await updateDoc(roomRef(room), { current: null, open: false });
+  }
 
-  onSnapshot(pollRef(code), s => {
+  /* ---- keyboard, for presenting ---- */
+  addEventListener("keydown", e => {
+    const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
+    if (typing) return;
+    if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
+    else if (e.key === " ") { e.preventDefault(); toggleOpen(); }
+    else if (e.key === "Escape") setPresent(false);
+  });
+
+  /* ---- subscriptions ---- */
+  onSnapshot(roomRef(room), s => {
     if (!s.exists()) return;
-    poll = s.data();
-    if (!editorSeeded) {
-      document.getElementById("q").value = poll.question || "";
-      drawOpts((poll.options && poll.options.length) ? poll.options : ["", ""]);
-      editorSeeded = true;
-    }
-    const t = document.getElementById("toggle");
-    const p = document.getElementById("statepill");
-    t.dataset.open = poll.open ? "1" : "0";
-    t.textContent = poll.open ? "Close voting" : "Open voting";
-    t.className = poll.open ? "" : "primary";
-    p.textContent = poll.open ? "open" : "closed";
-    p.className = "pill " + (poll.open ? "open" : "closed");
-    render();
+    roomData = s.data();
+    bindVotes(roomData.current);
+    drawList(); drawLive(); drawResults();
   });
 
-  onSnapshot(votesRef(code), s => {
-    votes = s.docs.map(d => d.data());
-    render();
+  onSnapshot(query(qsRef(room), orderBy("order")), s => {
+    questions = s.docs.map(d => ({ id: d.id, ...d.data() }));
+    drawList(); drawLive(); drawResults();
   });
 
-  // Rebuild the results block only when the QUESTION changes; when just
-  // the numbers move, update in place so the bars animate instead of
-  // flashing (matters a lot on a projector).
-  let shape = null;
-  function render(){
-    const { counts, total } = tally(poll, votes);
-    const box = document.getElementById("results");
-    document.getElementById("livecount").textContent =
-      `${total} response${total === 1 ? "" : "s"}`;
+  function bindVotes(qid){
+    if (qid === boundQ) return;
+    boundQ = qid;
+    if (votesUnsub) { votesUnsub(); votesUnsub = null; }
+    votes = [];
+    if (!qid) return;
+    votesUnsub = onSnapshot(votesRef(room, qid), s => {
+      votes = s.docs.map(d => d.data());
+      drawLive(); drawResults();
+    });
+  }
 
-    if (!poll.options || !poll.options.length) {
-      shape = null;
-      box.innerHTML = `<p class="muted">Add a question and some options above.</p>`;
+  /* ---- rendering ---- */
+  // Guard every rebuild with a signature: a snapshot that changes nothing
+  // this block shows must not replace its DOM, or a button can be swapped
+  // out from under the click that's landing on it.
+  let listSig = null, liveSig = null;
+  function drawList(){
+    const el = document.getElementById("qlist");
+    const s = JSON.stringify([questions.map(q => [q.id, q.question, (q.options||[]).length]), roomData.current]);
+    if (s === listSig) return;
+    listSig = s;
+    if (!questions.length) {
+      el.innerHTML = `<p class="muted" style="margin:0">No questions yet. Add them before class — you can prepare the whole lecture here.</p>`;
       return;
     }
-    const nextShape = JSON.stringify([poll.question, poll.options]);
+    el.innerHTML = questions.map((q, i) => `
+      <div class="qitem ${q.id === roomData.current ? "live" : ""}">
+        <span class="n">${i + 1}</span>
+        <span class="body">
+          <span class="t">${esc(q.question)}</span>
+          <span class="m">${(q.options || []).length} options${q.id === roomData.current ? " · showing now" : ""}</span>
+        </span>
+        <span class="acts">
+          <button class="small ${q.id === roomData.current ? "ghost" : "primary"}"
+                  onclick="__show('${q.id}')">${q.id === roomData.current ? "Reshow" : "Show"}</button>
+          <button class="small ghost" onclick="__edit('${q.id}')">Edit</button>
+          <button class="small ghost" onclick="__del('${q.id}')">Delete</button>
+        </span>
+      </div>`).join("");
+  }
+
+  function drawLive(){
+    const el = document.getElementById("live");
+    const i = questions.findIndex(q => q.id === roomData.current);
+    const { total } = tally(questions[i], votes);
+    const s = JSON.stringify([roomData.current, roomData.open, i, questions.length]);
+
+    // Only the response count moves as votes land — update it in place so
+    // the controls underneath the instructor's cursor stay put.
+    if (s === liveSig) {
+      const c = document.getElementById("livecount");
+      if (c) c.textContent = `${total} response${total === 1 ? "" : "s"}`;
+      return;
+    }
+    liveSig = s;
+
+    if (!roomData.current) {
+      el.innerHTML = `<p class="muted" style="margin:0">Nothing is showing to students — they see a "waiting" screen.
+        Hit <b>Show</b> on a question to push it to their phones.</p>`;
+      return;
+    }
+    el.innerHTML = `
+      <div class="row spread">
+        <div class="row">
+          <span class="pill ${roomData.open ? "open" : "closed"}">${roomData.open ? "open" : "closed"}</span>
+          <span class="muted">Question ${i + 1} of ${questions.length} ·
+            <span id="livecount">${total} response${total === 1 ? "" : "s"}</span></span>
+        </div>
+        <div class="row">
+          <button class="small" id="prev" ${i <= 0 ? "disabled" : ""}>&larr; Prev</button>
+          <button class="small" id="next" ${i < 0 || i >= questions.length - 1 ? "disabled" : ""}>Next &rarr;</button>
+          <button class="small ${roomData.open ? "" : "primary"}" id="toggle">${roomData.open ? "Close voting" : "Open voting"}</button>
+          <button class="small ghost" id="clear">Clear votes</button>
+          <button class="small ghost" id="hide">Hide</button>
+        </div>
+      </div>
+      <p class="muted" style="margin:12px 0 0">
+        While presenting: <kbd>&larr;</kbd> <kbd>&rarr;</kbd> change question,
+        <kbd>space</kbd> opens or closes voting, <kbd>esc</kbd> leaves present mode.</p>`;
+    document.getElementById("prev").onclick   = () => step(-1);
+    document.getElementById("next").onclick   = () => step(1);
+    document.getElementById("toggle").onclick = toggleOpen;
+    document.getElementById("clear").onclick  = clearVotes;
+    document.getElementById("hide").onclick   = hideAll;
+  }
+
+  // Rebuild the results block only when the question changes; when just the
+  // numbers move, update in place so bars animate instead of flashing.
+  let shape = null;
+  function drawResults(){
+    const box = document.getElementById("results");
+    const q = questions.find(x => x.id === roomData.current);
+    if (!q) {
+      shape = null;
+      box.innerHTML = `<p class="muted" style="margin:0">No question is live.</p>`;
+      return;
+    }
+    const { counts, total } = tally(q, votes);
+    const nextShape = JSON.stringify([q.id, q.question, q.options]);
     if (nextShape !== shape) {
       shape = nextShape;
-      box.innerHTML = resultsHTML(poll, counts, total);
+      box.innerHTML = resultsHTML(q, counts, total);
       return;
     }
     const max = Math.max(1, ...counts);
@@ -429,67 +568,78 @@ async function teacher(code){
       bar.querySelector(".fill").style.width = (counts[i] / max * 100).toFixed(1) + "%";
       bar.querySelector(".bar-num").innerHTML = `<b>${counts[i]}</b> · ${pct}%`;
     });
-    box.querySelector(".total").textContent =
-      `${total} response${total === 1 ? "" : "s"}`;
+    box.querySelector(".total").textContent = `${total} response${total === 1 ? "" : "s"}`;
   }
 }
 
 /* ==================================================================== */
-/*  STUDENT VIEW                                                        */
+/*  STUDENT VIEW — scan once, stays live all lecture                    */
 /* ==================================================================== */
-async function student(code){
+async function student(room){
   await ready;
   app.innerHTML = `<div id="s"><p class="muted">Connecting…</p></div>`;
   const el = document.getElementById("s");
 
-  let poll = null, mine = null, votes = [];
+  let roomData = null, qdata = null, mine = null, votes = [];
+  let boundQ = null, unsubs = [];
 
-  onSnapshot(pollRef(code), s => {
+  onSnapshot(roomRef(room), s => {
     if (!s.exists()) {
-      el.innerHTML = `<h1>Poll not found</h1><p class="sub">Check the code with your instructor.</p>`;
+      el.innerHTML = `<h1>Session not found</h1><p class="sub">Check the code with your instructor.</p>`;
       return;
     }
-    poll = s.data(); draw();
+    roomData = s.data();
+    bind(roomData.current);
+    draw();
   });
-  onSnapshot(doc(db, "polls", code, "votes", uid), s => {
-    mine = s.exists() ? s.data().choice : null; draw();
-  });
-  onSnapshot(votesRef(code), s => { votes = s.docs.map(d => d.data()); draw(); });
 
-  async function vote(i){
-    if (!poll || !poll.open) return;
-    await setDoc(doc(db, "polls", code, "votes", uid), { choice: i, at: Date.now() });
+  function bind(qid){
+    if (qid === boundQ) return;
+    boundQ = qid;
+    unsubs.forEach(u => u()); unsubs = [];
+    qdata = null; mine = null; votes = [];
+    if (!qid) { draw(); return; }
+    unsubs.push(onSnapshot(qRef(room, qid), s => { qdata = s.exists() ? s.data() : null; draw(); }));
+    unsubs.push(onSnapshot(voteRef(room, qid, uid), s => { mine = s.exists() ? s.data().choice : null; draw(); }));
+    unsubs.push(onSnapshot(votesRef(room, qid), s => { votes = s.docs.map(d => d.data()); draw(); }));
   }
-  window.__vote = vote;
 
-  // Re-render only when something this student can SEE changes. Without
-  // this the page would rebuild on every incoming vote from the room,
-  // and a tap could land on a button that was just replaced.
+  window.__vote = async i => {
+    if (!roomData || !roomData.open || !boundQ) return;
+    await setDoc(voteRef(room, boundQ, uid), { choice: i, at: Date.now() });
+  };
+
+  // Re-render only when something this student can SEE changes — otherwise
+  // the page would rebuild on every incoming vote and swallow a tap.
   let sig = null;
   function draw(){
-    if (!poll) return;
-    const opts = poll.options || [];
-    const next = poll.open
-      ? JSON.stringify(["open", poll.question, opts, mine])
-      : JSON.stringify(["closed", poll.question, opts, tally(poll, votes).counts]);
+    if (!roomData) return;
+    const open = !!roomData.open;
+    const next = !boundQ || !qdata
+      ? JSON.stringify(["wait"])
+      : open ? JSON.stringify(["open", boundQ, qdata.question, qdata.options, mine])
+             : JSON.stringify(["closed", boundQ, qdata.question, qdata.options, tally(qdata, votes).counts]);
     if (next === sig) return;
     sig = next;
 
-    if (!poll.open) {
-      const { counts, total } = tally(poll, votes);
-      el.innerHTML = total
-        ? `<div class="status">Voting is closed — here are the results.</div>${resultsHTML(poll, counts, total)}`
-        : `<div class="status">Voting isn't open yet. This page will update on its own — keep it open.</div>
-           <div class="qtext">${esc(poll.question || "")}</div>`;
+    if (!boundQ || !qdata) {
+      el.innerHTML = `<div class="status wait">Waiting for the next question — keep this page open.</div>`;
       return;
     }
-
+    if (!open) {
+      const { counts, total } = tally(qdata, votes);
+      el.innerHTML = total
+        ? `<div class="status">Voting is closed — here are the results.</div>${resultsHTML(qdata, counts, total)}`
+        : `<div class="status wait">Voting is closed right now — keep this page open.</div>
+           <div class="qtext">${esc(qdata.question || "")}</div>`;
+      return;
+    }
     el.innerHTML = `
       ${mine === null
         ? `<div class="status">Pick one answer.</div>`
         : `<div class="status ok">Answer recorded — tap another option to change it.</div>`}
-      <div class="qtext">${esc(poll.question || "Question")}</div>
-      ${opts.map((o, i) => `
+      <div class="qtext">${esc(qdata.question || "Question")}</div>
+      ${(qdata.options || []).map((o, i) => `
         <button class="choice" aria-pressed="${mine === i}" onclick="__vote(${i})">
           <span class="tag" style="background:${BARS[i % BARS.length]}">${LETTERS[i]}</span>
           <span>${esc(o)}</span>
@@ -503,10 +653,8 @@ async function student(code){
 function landing(){
   app.innerHTML = `
     <h1>Live Poll</h1>
-    <p class="sub">Start a poll, put the QR code on the projector, watch answers come in.</p>
-    <div class="panel">
-      <button class="primary" id="start">Start a new poll</button>
-    </div>
+    <p class="sub">One QR code per lecture. Push questions to it as you go.</p>
+    <div class="panel"><button class="primary" id="start">Start a session</button></div>
     <div class="panel">
       <label for="jc">Joining as a student?</label>
       <div class="row">
@@ -516,10 +664,12 @@ function landing(){
       </div>
     </div>`;
   document.getElementById("start").onclick = () => { location.hash = "#t/" + newCode(); };
-  document.getElementById("join").onclick = () => {
+  const go = () => {
     const c = document.getElementById("jc").value.trim().toUpperCase();
     if (c.length === 4) location.hash = "#p/" + c;
   };
+  document.getElementById("join").onclick = go;
+  document.getElementById("jc").addEventListener("keydown", e => { if (e.key === "Enter") go(); });
 }
 
 function route(){
@@ -528,18 +678,17 @@ function route(){
   if (!m) return landing();
   const mode = m[1].toLowerCase(), code = m[2].toUpperCase();
   (mode === "t" ? teacher : student)(code).catch(e => {
-    app.innerHTML = `<h1>Something went wrong</h1>
-      <p class="sub">${esc(e && e.message || e)}</p>
-      <p class="muted">Most often this means Anonymous sign-in isn't enabled in Firebase
-      Authentication, or the Firestore rules haven't been published yet.</p>`;
+    fatal("Something went wrong", esc(e && e.message || e) +
+      `<br><br><span class="muted">Most often this means Anonymous sign-in isn't enabled in
+       Firebase Authentication, or the Firestore rules haven't been published yet.</span>`);
   });
 }
 
 let lastHash = location.hash;
 addEventListener("hashchange", () => {
-  const m = location.hash.match(/^#t\//), n = lastHash.match(/^#t\//);
+  const a = /^#t\//.test(location.hash), b = /^#t\//.test(lastHash);
   lastHash = location.hash;
-  if (m || n) location.reload(); else route();
+  if (a || b) location.reload(); else route();
 });
 route();
 </script>

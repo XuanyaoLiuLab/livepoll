@@ -78,21 +78,39 @@ secret in it, and student votes live in Firestore, not in the repo).
 
 ## Using it in class
 
-1. Open the site on the machine you'll teach from. Click **Start a new poll**.
-2. Type the question and the options, click **Save question**.
-3. **Bookmark this page.** The URL ends in `#t/ABCD` — that's your console for
-   this poll. Create the poll on the machine you'll actually present from:
-   editing rights are tied to the browser that made it.
-4. Put the QR code on screen (or click **Present** for a projector-sized view
-   with a small QR in the corner for latecomers).
-5. Click **Open voting**. Bars move live as answers arrive.
-6. Click **Close voting** when you're done — students' phones switch to
-   showing the results, which is a nice moment for the discussion.
-7. **Clear votes** re-runs the same question with a different section.
-   **New poll** starts a fresh question with a fresh code.
+**One code for the whole lecture.** Students scan once, at the start, and
+their page stays live all hour — when you push the next question, it appears
+on their phone by itself. They never rescan.
 
-Students can change their answer while voting is open, which is what you want
-for a think-pair-share: poll, discuss, re-poll.
+### Before class
+
+1. Open the site on the machine you'll teach from. Click **Start a session**.
+2. **Bookmark this page.** The URL ends in `#t/ABCD` — that's your console.
+   Set it up on the machine you'll actually present from: editing rights are
+   tied to the browser that created the session.
+3. Click **+ Add question** as many times as you need. Prepare the whole
+   lecture's questions in advance; they sit there until you show them.
+
+Reuse the same bookmark next time and Clear votes, or start a new session for
+a new code.
+
+### During class
+
+1. Put the QR code up while students settle in — tell them once to leave the
+   tab open. Click **Present** for the projector view; a small QR stays in the
+   corner the whole time so anyone who drops out can rejoin silently.
+2. Hit **Show** on a question (or <kbd>→</kbd>) to push it to their phones.
+   Voting opens automatically.
+3. Bars move live. **Close voting** (or <kbd>space</kbd>) when you're done —
+   their phones switch to showing the results, which is a good handoff into
+   discussion.
+4. <kbd>→</kbd> and <kbd>←</kbd> move between questions, <kbd>space</kbd>
+   opens/closes voting, <kbd>esc</kbd> leaves present mode. **Hide** returns
+   everyone to a neutral waiting screen between topics.
+
+Going back to an earlier question keeps its votes — nothing is lost by moving
+around. Students can change their answer while voting is open, which is what
+you want for think-pair-share: poll, discuss, re-poll on the same question.
 
 ---
 
@@ -102,6 +120,11 @@ for a think-pair-share: poll, discuss, re-poll.
 a day. A 40-student poll with live results costs roughly 40 writes and a few
 thousand reads. You would need dozens of large lectures per day to approach
 the limit.
+
+**Staying connected.** The student page is a live subscription, not a loaded
+snapshot. It survives the phone locking, the browser backgrounding, and Wi-Fi
+dropping — the client reconnects and catches up on its own. It does not
+survive a student closing the tab, which is what the corner QR code is for.
 
 **Anonymity.** You see counts, never names. The anonymous Firebase uid is
 opaque and isn't shown anywhere in the interface. If a student clears their
