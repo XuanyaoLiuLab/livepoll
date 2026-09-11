@@ -1,0 +1,52 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- A poll: question text, answer options, open/closed flag -------
+    // Any signed-in visitor (students get an anonymous session automatically)
+    // can READ a poll. Only the person who created it can change it.
+    match /polls/{code} {
+
+      function isOwner() {
+        return request.auth != null
+          && resource.data.owner == request.auth.uid;
+      }
+      function wellFormed() {
+        return request.resource.data.question is string
+          && request.resource.data.question.size() < 500
+          && request.resource.data.options is list
+          && request.resource.data.options.size() <= 8
+          && request.resource.data.open is bool;
+      }
+
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null
+        && wellFormed()
+        && request.resource.data.owner == request.auth.uid;
+
+      allow update: if isOwner()
+        && wellFormed()
+        && request.resource.data.owner == resource.data.owner;
+
+      allow delete: if isOwner();
+
+      // ---- Votes: one document per voter, named by their uid -----------
+      // Everyone can read the tally; you can only write your own vote,
+      // and the poll's owner can clear the whole set.
+      match /votes/{voterId} {
+        allow read: if request.auth != null;
+
+        allow create, update: if request.auth != null
+          && request.auth.uid == voterId
+          && request.resource.data.choice is int
+          && get(/databases/$(database)/documents/polls/$(code)).data.open == true;
+
+        allow delete: if request.auth != null
+          && (request.auth.uid == voterId
+              || get(/databases/$(database)/documents/polls/$(code)).data.owner == request.auth.uid);
+      }
+    }
+  }
+}
